@@ -1,0 +1,5 @@
+# Installs NuGet with Force
+        Install-PackageProvider -Name NuGet -Force 
+
+        # Trust Microsoft's PSGallery repository
+        Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
