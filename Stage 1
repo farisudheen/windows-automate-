@@ -1,5 +1,5 @@
+# Check if the PSWindowsUpdate module is installed
 Function InstallWindowsModules {
-    # Check if the PSWindowsUpdate module is installed
     $module = Get-Module -ListAvailable -Name PSWindowsUpdate
 
     if ($module) {
@@ -7,7 +7,7 @@ Function InstallWindowsModules {
         Write-Host "Module path: $($module.ModuleBase)"
     } else {
         Write-Host "PSWindowsUpdate is not installed. Installing now..."
-        
+
         # Installs NuGet with Force
         Install-PackageProvider -Name NuGet -Force 
 
