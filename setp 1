@@ -1,0 +1,8 @@
+# Check if PSWindowsUpdate module is installed
+$module = Get-Module -ListAvailable PSWindowsUpdate
+
+if ($module) {
+    Write-Output "PSWindowsUpdate module is installed."
+} else {
+    Write-Output "PSWindowsUpdate module is not installed."
+}
