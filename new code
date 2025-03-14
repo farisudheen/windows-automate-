@@ -1,0 +1,32 @@
+Function InstallWindowsModules {
+    # Check if the PSWindowsUpdate module is installed
+    $module = Get-Module -ListAvailable -Name PSWindowsUpdate
+
+    if ($module) {
+        Write-Host "PSWindowsUpdate is already installed."
+        Write-Host "Module path: $($module.ModuleBase)"
+    } else {
+        Write-Host "PSWindowsUpdate is not installed. Installing now..."
+        
+        # Installs NuGet with Force
+        Install-PackageProvider -Name NuGet -Force 
+
+        # Trust Microsoft's PSGallery repository
+        Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+
+        try {
+            # Install the PSWindowsUpdate module from PSGallery
+            Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+            Write-Host "PSWindowsUpdate has been installed successfully."
+
+            # Get the installed module path
+            $module = Get-Module -ListAvailable -Name PSWindowsUpdate
+            Write-Host "Module path: $($module.ModuleBase)"
+        } catch {
+            Write-Host "An error occurred while installing the module: $_"
+        }
+    }
+}
+
+# Run the function to check and install the module if necessary
+InstallWindowsModules
