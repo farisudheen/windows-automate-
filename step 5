@@ -1,0 +1,124 @@
+# Define log file path
+$logFile = "C:\windowsautoupdate\LogFile.txt"
+$logDir = "C:\windowsautoupdate"
+
+# Check if the log directory exists, if not, create it
+if (-not (Test-Path -Path $logDir)) {
+    try {
+        New-Item -Path $logDir -ItemType Directory -Force
+        Write-Host "Log directory created at $logDir."
+    } catch {
+        Write-Host "Failed to create log directory: $_"
+        exit 1
+    }
+}
+
+# Check if the log file exists, if not, create it
+if (-not (Test-Path -Path $logFile)) {
+    try {
+        New-Item -Path $logFile -ItemType File -Force
+        Write-Host "Log file created at $logFile."
+    } catch {
+        Write-Host "Failed to create log file: $_"
+        exit 1
+    }
+}
+
+# Function to write messages to the log
+function Write-Log {
+    param (
+        [string]$message
+    )
+    try {
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        "$timestamp - $message" | Out-File -Append -FilePath $logFile -Force
+    } catch {
+        Write-Host "Error writing to log file: $_"
+    }
+}
+
+# Check if the script is running as Administrator
+$runningAsAdmin = [System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()
+$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
+if (-not ($runningAsAdmin.IsInRole($adminRole))) {
+    Write-Host "This script must be run as Administrator."
+    exit 1
+}
+
+# Check if the PSWindowsUpdate module is installed
+$module = Get-Module -ListAvailable PSWindowsUpdate
+
+if ($module) {
+    Write-Log "PSWindowsUpdate module is installed."
+} else {
+    Write-Log "PSWindowsUpdate module is not installed."
+
+    # Install NuGet package provider with Force
+    try {
+        Write-Log "Installing NuGet package provider..."
+        Install-PackageProvider -Name NuGet -Force -Scope CurrentUser
+    } catch {
+        Write-Log "Error installing NuGet package provider: $_"
+        exit 1
+    }
+
+    # Trust the PSGallery repository for PowerShell modules
+    try {
+        Write-Log "Trusting the PSGallery repository..."
+        Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+    } catch {
+        Write-Log "Error trusting PSGallery repository: $_"
+        exit 1
+    }
+
+    # Install the PSWindowsUpdate module from the PowerShell Gallery
+    try {
+        Write-Log "Installing PSWindowsUpdate module..."
+        Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+        Write-Log "PSWindowsUpdate module has been installed."
+    } catch {
+        Write-Log "Error installing PSWindowsUpdate module: $_"
+        exit 1
+    }
+}
+
+Write-Log "Script execution completed."
+
+# Step 2: Import the module
+try {
+    Import-Module PSWindowsUpdate
+    Write-Log "PSWindowsUpdate module imported successfully."
+} catch {
+    Write-Log "Error importing PSWindowsUpdate module: $_"
+    exit 1
+}
+
+# Step 3: Check for pending updates
+Write-Host "Checking for available updates..."
+$updates = Get-WindowsUpdate
+
+# Step 4: List available updates before installing
+if ($updates.Count -gt 0) {
+    Write-Host "The following updates are available:"
+    $updates | ForEach-Object {
+        Write-Host "Update Title: $($_.Title)"
+        Write-Log "Update found: $($_.Title)"
+    }
+
+    # Step 5: Install updates
+    Write-Host "Installing updates..."
+    try {
+        Install-WindowsUpdate -AcceptAll -AutoReboot
+        Write-Log "Updates installed successfully."
+    } catch {
+        Write-Log "Error installing updates: $_"
+        exit 1
+    }
+} else {
+    Write-Host "No updates available."
+    Write-Log "No updates available."
+}
+
+# Step 6: End of script
+Write-Host "Windows Update check and installation completed."
+Write-Log "Windows Update check and installation completed."
