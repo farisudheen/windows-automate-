@@ -1,0 +1,19 @@
+# Check if the PSWindowsUpdate module is installed
+$module = Get-Module -ListAvailable PSWindowsUpdate
+
+if ($module) {
+    Write-Output "PSWindowsUpdate module is installed."
+} else {
+    Write-Output "PSWindowsUpdate module is not installed."
+    
+    # Install NuGet package provider with Force
+    Install-PackageProvider -Name NuGet -Force -Scope CurrentUser
+
+    # Trust the PSGallery repository for PowerShell modules
+    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+
+    # Install the PSWindowsUpdate module from the PowerShell Gallery
+    Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+
+    Write-Output "PSWindowsUpdate module has been installed."
+}
