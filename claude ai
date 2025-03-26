@@ -1,0 +1,145 @@
+# Windows Update Automation Script
+# Version: 1.1
+# Last Updated: 2024-03-26
+
+# Configuration Parameters
+$logDir = "C:\WindowsAutoUpdate"
+$logFile = Join-Path -Path $logDir -ChildPath "UpdateLog_$(Get-Date -Format 'yyyyMMdd').txt"
+$maxLogFiles = 10  # Number of log files to keep
+
+# Logging Function with Enhanced Error Handling
+function Write-DetailedLog {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        
+        [Parameter(Mandatory=$false)]
+        [ValidateSet('Info', 'Warning', 'Error')]
+        [string]$Level = 'Info'
+    )
+    
+    try {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$Level] $timestamp - $Message"
+        
+        # Write to console
+        switch ($Level) {
+            'Warning' { Write-Warning $logEntry }
+            'Error'   { Write-Error $logEntry }
+            default   { Write-Host $logEntry }
+        }
+        
+        # Ensure log directory exists
+        if (-not (Test-Path -Path $logDir)) {
+            New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+        }
+        
+        # Write to log file
+        $logEntry | Out-File -FilePath $logFile -Append -Encoding UTF8
+    }
+    catch {
+        Write-Host "Critical error in logging: $_"
+    }
+}
+
+# Validate Administrator Privileges
+function Test-AdminPrivileges {
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($currentUser)
+    
+    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-DetailedLog -Message "Script requires administrator privileges" -Level Error
+        throw "Please run the script as an administrator"
+    }
+}
+
+# Manage Log File Rotation
+function Manage-LogFiles {
+    try {
+        $logFiles = Get-ChildItem -Path $logDir -Filter "UpdateLog_*.txt" | 
+                    Sort-Object CreationTime -Descending
+        
+        if ($logFiles.Count -gt $maxLogFiles) {
+            $logFiles | Select-Object -Skip $maxLogFiles | Remove-Item -Force
+            Write-DetailedLog -Message "Rotated log files. Kept most recent $maxLogFiles logs"
+        }
+    }
+    catch {
+        Write-DetailedLog -Message "Error managing log files: $_" -Level Warning
+    }
+}
+
+# Prepare Update Environment
+function Initialize-UpdateEnvironment {
+    # Check and install required modules
+    $moduleName = 'PSWindowsUpdate'
+    
+    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+        try {
+            Write-DetailedLog -Message "Installing $moduleName module"
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+            Install-Module -Name $moduleName -Force -Scope CurrentUser
+        }
+        catch {
+            Write-DetailedLog -Message "Failed to install $moduleName: $_" -Level Error
+            throw
+        }
+    }
+    
+    # Import module
+    try {
+        Import-Module $moduleName -Force
+        Write-DetailedLog -Message "$moduleName module imported successfully"
+    }
+    catch {
+        Write-DetailedLog -Message "Failed to import $moduleName: $_" -Level Error
+        throw
+    }
+}
+
+# Main Update Process
+function Invoke-WindowsUpdateProcess {
+    # Find available updates
+    $updates = Get-WindowsUpdate -ErrorAction SilentlyContinue
+    
+    if ($updates.Count -gt 0) {
+        Write-DetailedLog -Message "Found $($updates.Count) available updates"
+        
+        # Log update details
+        $updates | ForEach-Object {
+            Write-DetailedLog -Message "Update: $($_.Title) - KB$($_.KBArticleID)"
+        }
+        
+        # Install updates
+        try {
+            Write-DetailedLog -Message "Starting update installation"
+            Install-WindowsUpdate -AcceptAll -AutoReboot -Confirm:$false
+            Write-DetailedLog -Message "Updates installed successfully"
+        }
+        catch {
+            Write-DetailedLog -Message "Update installation failed: $_" -Level Error
+        }
+    }
+    else {
+        Write-DetailedLog -Message "No Windows updates are currently available"
+    }
+}
+
+# Main Script Execution
+try {
+    # Validate and prepare
+    Test-AdminPrivileges
+    Manage-LogFiles
+    Initialize-UpdateEnvironment
+    
+    # Perform updates
+    Invoke-WindowsUpdateProcess
+}
+catch {
+    Write-DetailedLog -Message "Script execution failed: $_" -Level Error
+}
+finally {
+    Write-DetailedLog -Message "Windows Update process completed"
+}
