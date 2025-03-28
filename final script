@@ -1,0 +1,146 @@
+# Define log file and directory paths
+$logDir = "C:\windowsautoupdate"
+$logFile = "$logDir\LogFile.txt"
+
+# Function to write messages to the log
+function Write-Log {
+    param (
+        [string]$message
+    )
+    try {
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        "$timestamp - $message" | Out-File -Append -FilePath $logFile -Force
+    } catch {
+        Write-Host "Error writing to log file: $_"
+        exit 1
+    }
+}
+
+# Step 1: Ensure log directory exists before proceeding
+if (-not (Test-Path -Path $logDir)) {
+    try {
+        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+        if (-not (Test-Path -Path $logDir)) {
+            Write-Host "Failed to create log directory."
+            exit 1
+        }
+        Write-Host "Log directory created at $logDir."
+    } catch {
+        Write-Host "Error creating log directory: $_"
+        exit 1
+    }
+}
+
+# Step 2: Ensure log file exists before proceeding
+if (-not (Test-Path -Path $logFile)) {
+    try {
+        New-Item -Path $logFile -ItemType File -Force | Out-Null
+        if (-not (Test-Path -Path $logFile)) {
+            Write-Host "Failed to create log file."
+            exit 1
+        }
+        Write-Host "Log file created at $logFile."
+    } catch {
+        Write-Host "Error creating log file: $_"
+        exit 1
+    }
+}
+
+Write-Log "Script execution started."
+
+# Step 3: Ensure the script is running as Administrator
+$runningAsAdmin = [System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()
+$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
+if (-not ($runningAsAdmin.IsInRole($adminRole))) {
+    Write-Host "This script must be run as Administrator."
+    Write-Log "Script must be run as Administrator. Exiting."
+    exit 1
+}
+
+Write-Log "Script is running as Administrator."
+
+# Step 4: Check if the PSWindowsUpdate module is installed before proceeding
+$module = Get-Module -ListAvailable PSWindowsUpdate
+
+if (-not $module) {
+    Write-Log "PSWindowsUpdate module is not installed. Installing..."
+
+    # Install NuGet package provider
+    if (-not (Get-PackageProvider -ListAvailable | Where-Object { $_.Name -eq "NuGet" })) {
+        try {
+            Write-Log "Installing NuGet package provider..."
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser
+        } catch {
+            Write-Log "Error installing NuGet package provider: $_"
+            exit 1
+        }
+    }
+
+    # Trust the PSGallery repository
+    if ((Get-PSRepository -Name PSGallery).InstallationPolicy -ne "Trusted") {
+        try {
+            Write-Log "Trusting the PSGallery repository..."
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+        } catch {
+            Write-Log "Error trusting PSGallery repository: $_"
+            exit 1
+        }
+    }
+
+    # Install the PSWindowsUpdate module
+    try {
+        Write-Log "Installing PSWindowsUpdate module..."
+        Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+        Write-Log "PSWindowsUpdate module installed successfully."
+    } catch {
+        Write-Log "Error installing PSWindowsUpdate module: $_"
+        exit 1
+    }
+}
+
+# Step 5: Ensure the module is loaded before proceeding
+if (-not (Get-Module -Name PSWindowsUpdate)) {
+    try {
+        Import-Module PSWindowsUpdate -Force
+        Write-Log "PSWindowsUpdate module imported successfully."
+    } catch {
+        Write-Log "Error importing PSWindowsUpdate module: $_"
+        exit 1
+    }
+} else {
+    Write-Log "PSWindowsUpdate module is already loaded."
+}
+
+Write-Log "Checking for available updates..."
+
+# Step 6: Check for Windows updates
+Write-Host "Checking for available updates..."
+try {
+    $updates = Get-WindowsUpdate -MicrosoftUpdate
+} catch {
+    Write-Log "Error fetching Windows updates: $_"
+    exit 1
+}
+
+# Step 7: List all available updates (including KB articles) and log them
+if ($updates.Count -gt 0) {
+    Write-Host "The following updates are available:"
+    $updates | ForEach-Object {
+        Write-Host "Update Title: $($_.Title)"
+        Write-Host "KB Article: $($_.KBArticleID)"
+        Write-Log "Update found: Title: $($_.Title), KB Article: $($_.KBArticleID)"
+    }
+
+    # Step 8: Install updates
+    Write-Host "Installing updates..."
+    try {
+        Install-WindowsUpdate -AcceptAll -AutoReboot -MicrosoftUpdate
+        Write-Log "Updates installed successfully."
+    } catch {
+        Write-Log "Error installing updates: $_"
+        exit 1
+    }
+} else {
+    Write-Host "No updates available."
+    Write-Log "No updates available."
+}
