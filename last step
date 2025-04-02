@@ -1,0 +1,113 @@
+# Define Log File Path
+$logPath = "C:\WindowsUpdate"
+$logFile = "$logPath\UpdateLog.txt"
+
+# Ensure Log Directory Exists, Exit if Creation Fails
+if (!(Test-Path $logPath)) {
+    try {
+        New-Item -ItemType Directory -Path $logPath -Force | Out-Null
+        Write-Host "Log directory created: $logPath"
+    } catch {
+        Write-Host "Failed to create log directory. Exiting..."
+        exit
+    }
+}
+
+# Ensure Log File Exists
+if (!(Test-Path $logFile)) {
+    try {
+        New-Item -ItemType File -Path $logFile -Force | Out-Null
+        Write-Host "Log file created: $logFile"
+    } catch {
+        Write-Host "Failed to create log file. Exiting..."
+        exit
+    }
+}
+
+# Function to Write to Log and Console
+function Write-Log {
+    param ([string]$message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "$timestamp - $message"
+    Write-Host $logEntry
+    $logEntry | Out-File -Append -FilePath $logFile
+}
+
+# Log Retention Policy (60 Days)
+Write-Log "Checking log retention policy..."
+Get-ChildItem -Path $logPath -Filter "*.txt" | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-60) } | Remove-Item -Force
+
+# Ensure Windows Update Service is Running
+$service = Get-Service -Name wuauserv
+if ($service.Status -ne "Running") {
+    Write-Log "Starting Windows Update Service..."
+    Start-Service -Name wuauserv
+}
+
+# Ensure NuGet Package Provider is Installed and Trusted
+if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+    Write-Log "Installing NuGet package provider..."
+    Install-PackageProvider -Name NuGet -Force
+}
+
+# Trust NuGet as a Provider
+if ((Get-PackageProvider -Name NuGet).ProviderName -ne "NuGet") {
+    Write-Log "Setting NuGet as a trusted package provider..."
+    Set-PSRepository -Name NuGet -InstallationPolicy Trusted
+}
+
+# Ensure PSGallery is Trusted
+if ((Get-PSRepository -Name PSGallery).InstallationPolicy -ne "Trusted") {
+    Write-Log "Setting PSGallery as a trusted repository..."
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+}
+
+# Install PSWindowsUpdate Module from PSGallery if not installed
+if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+    Write-Log "Installing PSWindowsUpdate module from PSGallery..."
+    Install-Module -Name PSWindowsUpdate -Force -SkipPublisherCheck
+    Import-Module PSWindowsUpdate
+}
+
+# Check for Pending Updates
+Write-Log "Checking for available updates..."
+$updates = Get-WindowsUpdate
+if ($updates) {
+    Write-Log "Updates found:"
+    $updates | ForEach-Object { Write-Log $_.Title }
+} else {
+    Write-Log "No updates available."
+    pause
+    exit
+}
+
+# Ensure Sufficient Disk Space
+$diskSpace = (Get-PSDrive C).Free
+if ($diskSpace -lt 5GB) {
+    Write-Log "Warning: Low disk space! At least 5GB is recommended."
+    pause
+    exit
+}
+
+# Check RAM Availability
+$freeMemory = (Get-WmiObject Win32_OperatingSystem).FreePhysicalMemory / 1MB
+if ($freeMemory -lt 1024) {
+    Write-Log "Warning: Low free RAM! At least 1GB is recommended."
+    pause
+    exit
+}
+
+# Install Updates
+Write-Log "Installing updates..."
+Install-WindowsUpdate -AcceptAll -AutoReboot | Tee-Object -FilePath $logFile -Append
+
+# Check for Required Reboot
+if (Get-WURebootStatus) {
+    Write-Log "Reboot required. Restarting system..."
+    Restart-Computer -Force
+} else {
+    Write-Log "No reboot required. Update process completed."
+}
+
+Write-Host "Script execution completed. Press any key to exit..."
+Read-Host
