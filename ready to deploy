@@ -94,4 +94,25 @@ if ($diskSpace -lt 5GB) {
     exit
 }
 
-# Check
+# Check RAM Availability
+$freeMemory = (Get-WmiObject Win32_OperatingSystem).FreePhysicalMemory / 1MB
+if ($freeMemory -lt 1024) {
+    Write-Log "Warning: Low free RAM! At least 1GB is recommended."
+    pause
+    exit
+}
+
+# Install Updates
+Write-Log "Installing updates..."
+Install-WindowsUpdate -AcceptAll -AutoReboot | Tee-Object -FilePath $logFile -Append
+
+# Check for Required Reboot
+if (Get-WURebootStatus) {
+    Write-Log "Reboot required. Restarting system..."
+    Restart-Computer -Force
+} else {
+    Write-Log "No reboot required. Update process completed."
+}
+
+Write-Host "Script execution completed. Press any key to exit..."
+Read-Host
